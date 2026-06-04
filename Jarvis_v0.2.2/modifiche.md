@@ -616,7 +616,7 @@ def close_app(app_name: str) -> str:
 
 ---
 
-## 5. assistant.py (Integrazione della Pipeline Streaming)
+## 5. assistant.py (Integrazione della Pipeline Streaming e Ciclo Continuo)
 
 ### Prima
 ```python
@@ -654,6 +654,7 @@ if __name__ == "__main__":
 ### Dopo
 ```python
 import asyncio
+import msvcrt
 from brain import Brain
 from ears import Ears
 from mouth import Mouth
@@ -667,23 +668,43 @@ async def main():
     
     mouth.prewarm()
     
-    print("Ikki online. (Premi INVIO per parlare, 'q' per uscire)")
+    print("Ikki online. (Parla liberamente! Premi 'q' sulla tastiera in qualsiasi momento per uscire)")
+    print("[Premi INVIO una prima volta per iniziare la conversazione...]")
+    input()
           
-    while True: 
-        cmd = input("\n>").strip()
-        if cmd.lower() in ["q", "quit", "exit"]:
-            break
-        
+    while True:
+        # Verifica se l'utente ha premuto 'q' sulla tastiera prima di avviare la registrazione
+        if msvcrt.kbhit():
+            key = msvcrt.getch().lower()
+            if key == b'q':
+                print("\n[Uscita richiesta da tastiera]")
+                break
+                
         # Avvio registrazione con silenzio dinamico (VAD)
-        print("[Ascolto... parla ora]")
+        print("\n[Ascolto... parla ora]")
         audio_b64 = ears.listen()
         
+        # Verifica tastiera subito dopo la registrazione
+        if msvcrt.kbhit():
+            key = msvcrt.getch().lower()
+            if key == b'q':
+                print("\n[Uscita richiesta da tastiera]")
+                break
+
         transcript = await brain.transcribe_audio(audio_b64)
         if not transcript:
-            print("[Nessun audio o trascrizione rilevata]")
+            # Se nessun audio viene rilevato, riascolta senza rispondere
             continue
          
         print(f"Utente: {transcript}")
+        
+        # Verifica per comandi vocali di uscita
+        exit_commands = {"exit", "quit", "goodbye", "shut down", "fermati", "esci", "addio"}
+        if any(cmd in transcript.lower() for cmd in exit_commands):
+            print("Ikki: Goodbye!")
+            mouth.speak("Goodbye!")
+            break
+            
         print("Ikki: ", end="", flush=True)
         
         # Invio frasi nello stream a bocca dinamica man mano che arrivano
@@ -696,5 +717,8 @@ async def main():
         await asyncio.to_thread(mouth.wait_until_done)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[Programma terminato con Ctrl+C]")
 ```
