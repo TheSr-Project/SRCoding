@@ -6,6 +6,11 @@ Questo documento mostra il confronto tra il codice originale ("Prima") e il codi
 
 ## 1. ears.py (Voice Activity Detection - VAD)
 
+**Descrizione delle modifiche:**
+* **Cosa faceva prima:** Il codice originale effettuava una registrazione audio fissa di 5 secondi dal microfono senza alcuna logica di rilevamento del parlato o del silenzio.
+* **Cosa fa dopo:** Implementa un algoritmo VAD (Voice Activity Detection) basato sull'energia dell'audio (RMS). Avvia lo streaming dal microfono e interrompe la registrazione dinamicamente 1.2 secondi dopo che l'utente ha smesso di parlare, oppure dopo 3.0 secondi se non viene rilevata alcuna voce fin dall'inizio.
+* **Perché:** Evita di dover attendere un tempo fisso (ad es. 5 secondi) ad ogni interazione, riducendo drasticamente la latenza iniziale e rendendo la risposta dell'assistente immediata dopo il silenzio.
+
 ### Prima
 ```python
 import base64
@@ -109,6 +114,13 @@ class Ears:
 ---
 
 ## 2. brain.py (Streaming Frasale, Rimozione Terminale e Integrazione Windows)
+
+**Descrizione delle modifiche:**
+* **Cosa faceva prima:** Generava l'intera risposta di testo dall'agente in una volta sola prima di mandarla in playback, e offriva un tool (`execute_terminal_command`) che cercava di eseguire comandi generici a riga di comando.
+* **Cosa fa dopo:** 
+  * Restituisce la risposta tramite un generatore asincrono (`AsyncGenerator`), spezzando il testo frase per frase non appena arrivano i primi punti o punti interrogativi/esclamativi.
+  * Elimina il tool terminale generico e introduce tool nativi Windows sicuri e preconfigurati (`open_app`, `close_app`, `open_website` con ricerca avanzata).
+* **Perché:** Lo streaming frasale consente al modulo TTS di iniziare a parlare mentre il modello sta ancora generando il resto della risposta (latenza percepita azzerata). I tool Windows specifici evitano allucinazioni sintattiche del LLM (come l'uso di comandi Linux errati).
 
 ### Prima
 ```python
@@ -300,6 +312,11 @@ class Brain:
 
 ## 3. mouth.py (Parallelismo TTS e Riproduzione Audio)
 
+**Descrizione delle modifiche:**
+* **Cosa faceva prima:** Generava e riproduceva l'audio in modo sincrono e bloccante: l'utente doveva aspettare che l'intera risposta fosse generata dal modello e tradotta in audio prima di poter sentire la prima parola.
+* **Cosa fa dopo:** Implementa una pipeline asincrona con due code (`queue.Queue`) e due thread worker separati in background (uno per la generazione vocale ONNX, uno per la riproduzione audio tramite `sounddevice`).
+* **Perché:** Consente di sovrapporre la sintesi vocale e la riproduzione audio in parallelo. Non appena una frase è pronta dal Brain, viene sintetizzata e parlata immediatamente mentre le frasi successive vengono generate in background, per una fluidità conversazionale ottimale.
+
 ### Prima
 ```python
 import os
@@ -451,6 +468,13 @@ class Mouth:
 ---
 
 ## 4. tools.py (Eliminazione terminale e strumenti specifici Windows)
+
+**Descrizione delle modifiche:**
+* **Cosa faceva prima:** Aveva solo funzioni semplici per ricavare l'ora, aprire 3 siti hardcoded in una mappa o lanciare comandi shell arbitrari tramite `subprocess`.
+* **Cosa fa dopo:** Implementa funzioni Windows-native robuste:
+  * `open_website`: supporta la codifica corretta dell'URL (`urllib.parse`) per effettuare ricerche dirette su Google, YouTube, Wikipedia, GitHub, o fallback generici.
+  * `open_app` e `close_app`: aprono app e chiudono processi in modo pulito usando protocolli nativi (es. `spotify:`) o `taskkill /IM ... /F`.
+* **Perché:** Fornisce strumenti stabili per interagire con l'OS Windows senza esporre la shell a comandi non validi o rischiosi, azzerando le allucinazioni del modello.
 
 ### Prima
 ```python
@@ -617,6 +641,11 @@ def close_app(app_name: str) -> str:
 ---
 
 ## 5. assistant.py (Integrazione della Pipeline Streaming e Ciclo Continuo)
+
+**Descrizione delle modifiche:**
+* **Cosa faceva prima:** Richiedeva all'utente di premere `INVIO` prima di ogni singola interazione vocale, in un ciclo a turni sincroni e bloccanti.
+* **Cosa fa dopo:** Implementa un ciclo di conversazione continuo (hands-free). L'utente preme `INVIO` una sola volta all'avvio, dopodiché l'assistente ascolta costantemente (tramite VAD). È possibile interrompere il ciclo in qualsiasi momento premendo il tasto 'q' (verificato in modo non bloccante tramite `msvcrt.kbhit()`) o dicendo parole chiave come "exit" o "goodbye".
+* **Perché:** Trasforma l'assistente in un'esperienza hands-free fluida e naturale, dove l'utente può dialogare liberamente senza dover interagire continuamente con la tastiera.
 
 ### Prima
 ```python
