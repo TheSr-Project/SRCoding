@@ -1,6 +1,6 @@
 # Changelog delle Modifiche - Ottimizzazioni Ikki (Jarvis)
 
-Questo documento mostra il confronto tra il codice originale ("Prima") e il codice ottimizzato ("Dopo") per ciascuno dei file modificati nel progetto `Ikki`.
+Questo documento mostra il confronto tra il codice originale ("Prima") e il codice finale ottimizzato ("Dopo") per ciascuno dei file modificati nel progetto `Ikki`.
 
 ---
 
@@ -108,7 +108,7 @@ class Ears:
 
 ---
 
-## 2. brain.py (Async Generator per le frasi)
+## 2. brain.py (Streaming Frasale, Rimozione Terminale e Integrazione Windows)
 
 ### Prima
 ```python
@@ -116,12 +116,24 @@ from fury import Agent, HistoryManager
 from fury.types import create_tool
 from tools import get_current_time, open_website, execute_terminal_command
 
-# [Definizioni dei tool omesse per brevità]
+# [Dichiarazioni dei tool precedenti: get_time_tool, open_website_tool, terminal_tool]
 
 class Brain:
     def __init__(self):
-        # [Codice init omesso]
-        pass
+        self.agent = Agent(
+            model="llama3.1",
+            base_url="http://127.0.0.1:11434/v1",
+            system_prompt=(
+                "You are Ikki, a personal AI assistant. You are witty and conversational. "
+                "Always respond in English, in a concise and natural way, as if speaking out loud. "
+                "CRITICAL INSTRUCTION: When answering normally (like 'How are you?'), you MUST use PLAIN TEXT. "
+                "Do NOT ever output JSON format or tool templates for normal conversation. "
+                "ONLY trigger tools if the user explicitly commands you to 'open up' an app, check the time, or search."
+                                "ACTION RULE: When the user commands you to do something (like opening/closing apps or searching), you MUST trigger the tool IMMEDIATELY. Do NOT announce 'I am doing it' or 'I will execute this'. Never substitute a real tool execution with conversational text. Just do it."
+            ),
+            tools=[get_time_tool, open_website_tool, terminal_tool]
+        )
+        self.history_manager = HistoryManager(agent=self.agent, auto_compact=False)
 
     async def transcribe_audio(self, audio_b64: str) -> str:
         await self.history_manager.add_voice(audio_b64)
@@ -144,14 +156,84 @@ class Brain:
 from typing import AsyncGenerator
 from fury import Agent, HistoryManager
 from fury.types import create_tool
-from tools import get_current_time, open_website, execute_terminal_command
+from tools import get_current_time, open_website, open_app, close_app
 
-# [Definizioni dei tool omesse per brevità]
+get_time_tool= create_tool(
+    id= "get_current_time",
+    description= "ONLY use this tool if the user explicitly asks 'what time is it' or 'tell me the time'. Do NOT use this tool for general greetings like 'good morning' or 'hello'.",
+    execute= get_current_time,
+    input_schema={
+        "type":"object",
+        "properties":{},
+        "required":[]
+    },
+    output_schema={}
+)
+
+open_website_tool= create_tool (
+    id= "open_website",
+    description= (
+        "ONLY use this tool if the user explicitly asks to open a website, search on Google, search on YouTube, or find a video/song/topic online. "
+        "Can perform searches inside the website (e.g. 'open youtube and search for cat videos', or 'search google for python tutorials') using the optional search_query parameter."
+    ),
+    execute= open_website,
+    input_schema={
+        "type":"object",
+        "properties":{
+            "site_name":{"type": "string", "description":"The name of the website or platform to open (e.g. 'youtube', 'google', 'wikipedia', 'github')." },
+            "search_query":{"type": "string", "description":"Optional search query to run on that site (e.g. the video title or the search term)." }
+        },
+        "required":["site_name"]
+    },
+    output_schema={}
+)
+
+open_app_tool = create_tool(
+    id="open_app",
+    description="ONLY use this tool if the user explicitly asks to 'open', 'run', 'start' or 'launch' a program/application on the computer. Do NOT use this for normal conversation.",
+    execute=open_app,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "app_name": {"type": "string", "description": "The name of the local application to open (e.g. spotify, chrome, notepad, calculator)."}
+        },
+        "required": ["app_name"]
+    },
+    output_schema={}
+)
+
+close_app_tool = create_tool(
+    id="close_app",
+    description="ONLY use this tool if the user explicitly asks to 'close', 'exit', 'terminate' or 'kill' a program/application. Do NOT use this for normal conversation.",
+    execute=close_app,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "app_name": {"type": "string", "description": "The name of the local application to close (e.g. spotify, chrome, notepad, calculator)."}
+        },
+        "required": ["app_name"]
+    },
+    output_schema={}
+)
+
 
 class Brain:
     def __init__(self):
-        # [Codice init omesso]
-        pass
+        self.agent = Agent(
+            model="llama3.1",
+            base_url="http://127.0.0.1:11434/v1",
+            system_prompt=(
+                "You are Ikki, a personal AI assistant. You are witty and conversational. "
+                "Always respond in English, in a concise and natural way, as if speaking out loud. "
+                "CRITICAL INSTRUCTION: When answering normally (like 'How are you?'), you MUST use PLAIN TEXT. "
+                "Do NOT ever output JSON format or tool templates for normal conversation. "
+                "ONLY trigger tools if the user explicitly commands you to 'open' an app, 'close' an app, check the time, or search/open a website."
+                "ACTION RULE: When the user commands you to do something (like opening/closing apps or searching), you MUST trigger the tool IMMEDIATELY. Do NOT announce 'I am doing it' or 'I will execute this'. Never substitute a real tool execution with conversational text. Just do it."
+                "ENVIRONMENT NOTE: You are running on a Windows system. You do NOT need to write terminal commands yourself. Simply use the high-level tools 'open_app', 'close_app', and 'open_website'."
+            ),
+            tools=[get_time_tool, open_website_tool, open_app_tool, close_app_tool]
+        )
+        self.history_manager = HistoryManager(agent=self.agent, auto_compact=False)
 
     async def transcribe_audio(self, audio_b64: str) -> str:
         await self.history_manager.add_voice(audio_b64)
@@ -225,8 +307,7 @@ import numpy as np
 import sounddevice as sd
 from fury import Agent
 
-os.environ["PHONEMIZER_ESPEAK_LIBRARY"] = r"C:\Program Files\eSpeak NG\libespeak-ng.dll"
-os.environ["PHONEMIZER_ESPEAK_PATH"] = r"C:\Program Files\eSpeak NG\espeak-ng.exe"
+# [Codice import e variabili d'ambiente]
 
 class Mouth:
     def __init__(self, agent: Agent, sample_rate: int = 24000):
@@ -369,7 +450,173 @@ class Mouth:
 
 ---
 
-## 4. assistant.py (Integrazione della Pipeline Streaming)
+## 4. tools.py (Eliminazione terminale e strumenti specifici Windows)
+
+### Prima
+```python
+import datetime
+import webbrowser
+import os
+import subprocess
+
+def get_current_time()-> str:
+    now= datetime.datetime.now()
+    return now.strftime("%H:%M")
+
+def open_website(site_name: str) -> None:
+    site_name = site_name.lower().strip()
+    urls = {
+        "youtube" :  "https://youtube.com",
+        "google": "https://google.com",
+        "github": "https://github.com"
+    }
+    url = urls.get(site_name, f"https://google.com/search?q={site_name}")
+    webbrowser.open(url)
+    return f"I have successfully opened {site_name} on your computer."
+    
+def execute_terminal_command(command:str) -> str:
+    try:
+        results =  subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, text=True)
+        return f"Command executed successfully: {results}"
+    except subprocess.CalledProcessError as e:
+        return f"Error executing command: {e.output}"
+```
+
+### Dopo
+```python
+import datetime
+import webbrowser
+import os
+import subprocess
+import urllib.parse
+
+def get_current_time()-> str:
+    """
+    Returns the current local time. 
+    Use this when the user asks what time it is.
+    """
+    now = datetime.datetime.now()
+    return now.strftime("%H:%M")
+
+
+def open_website(site_name: str, search_query: str = "") -> str:
+    """
+    Opens a website in the default browser, optionally performing a search query.
+    Use this when the user asks to open a site (e.g. YouTube, Google, Wikipedia, Github) or search for something on these platforms.
+    """
+    site_name = site_name.lower().strip()
+    search_query = search_query.strip()
+    encoded_query = urllib.parse.quote(search_query)
+    
+    if site_name == "youtube":
+        if search_query:
+            url = f"https://www.youtube.com/results?search_query={encoded_query}"
+        else:
+            url = "https://youtube.com"
+    elif site_name == "google":
+        if search_query:
+            url = f"https://www.google.com/search?q={encoded_query}"
+        else:
+            url = "https://google.com"
+    elif site_name == "wikipedia":
+        if search_query:
+            url = f"https://it.wikipedia.org/wiki/Speciale:Ricerca?search={encoded_query}"
+        else:
+            url = "https://it.wikipedia.org"
+    elif site_name == "github":
+        if search_query:
+            url = f"https://github.com/search?q={encoded_query}"
+        else:
+            url = "https://github.com"
+    else:
+        if "." in site_name or site_name.startswith("http"):
+            url = site_name if site_name.startswith("http") else f"https://{site_name}"
+        elif search_query:
+            url = f"https://www.google.com/search?q={site_name}+{encoded_query}"
+        else:
+            url = f"https://www.google.com/search?q={encoded_query}" if search_query else f"https://www.google.com/search?q={site_name}"
+
+    webbrowser.open(url)
+    if search_query:
+        return f"Successfully opened {site_name} and searched for '{search_query}'."
+    return f"Successfully opened {site_name}."
+
+
+def open_app(app_name: str) -> str:
+    """
+    Opens a local application on the Windows computer.
+    Use this tool when the user asks to open, run, or start a program/application.
+    """
+    app_name = app_name.lower().strip()
+    app_mappings = {
+        "spotify": ("protocol", "spotify:"),
+        "chrome": ("cmd", "chrome.exe"),
+        "google chrome": ("cmd", "chrome.exe"),
+        "browser": ("cmd", "chrome.exe"),
+        "notepad": ("cmd", "notepad.exe"),
+        "calculator": ("cmd", "calc.exe"),
+        "calc": ("cmd", "calc.exe"),
+        "explorer": ("cmd", "explorer.exe"),
+        "files": ("cmd", "explorer.exe"),
+        "file explorer": ("cmd", "explorer.exe"),
+        "paint": ("cmd", "mspaint.exe"),
+        "mspaint": ("cmd", "mspaint.exe")
+    }
+    
+    try:
+        if app_name in app_mappings:
+            launch_type, value = app_mappings[app_name]
+            if launch_type == "protocol":
+                os.startfile(value)
+            else:
+                subprocess.Popen(value, shell=True)
+            return f"Successfully opened {app_name}."
+        else:
+            safe_name = app_name.replace('"', '').replace("'", "")
+            subprocess.Popen(f"start {safe_name}", shell=True)
+            return f"Attempted to open {app_name} using Windows 'start' command."
+    except Exception as e:
+        return f"Failed to open {app_name}. Error: {str(e)}"
+
+
+def close_app(app_name: str) -> str:
+    """
+    Closes a local running application on the Windows computer.
+    """
+    app_name = app_name.lower().strip()
+    process_mappings = {
+        "spotify": "Spotify.exe",
+        "chrome": "chrome.exe",
+        "google chrome": "chrome.exe",
+        "browser": "chrome.exe",
+        "notepad": "notepad.exe",
+        "calculator": "CalculatorApp.exe",
+        "calc": "CalculatorApp.exe",
+        "explorer": "explorer.exe",
+        "paint": "mspaint.exe",
+        "mspaint": "mspaint.exe"
+    }
+    
+    process_name = process_mappings.get(app_name, f"{app_name}.exe")
+    
+    try:
+        cmd = f"taskkill /IM {process_name} /F"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            return f"Successfully closed {app_name} ({process_name})."
+        else:
+            cmd_fallback = f"taskkill /IM {app_name} /F"
+            result_fallback = subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True)
+            if result_fallback.returncode == 0:
+                return f"Successfully closed {app_name}."
+            return f"Could not find or close {app_name}. Windows message: {result.stderr.strip()}"
+    except Exception as e:
+        return f"Failed to close {app_name}. Error: {str(e)}"
+```
+
+---
+
+## 5. assistant.py (Integrazione della Pipeline Streaming)
 
 ### Prima
 ```python
@@ -378,36 +625,27 @@ from brain import Brain
 from ears import Ears
 from mouth import Mouth
 
-
 async def main():
-    
      print("Inizializzazione sistema in corso...")
-     
-     
      brain =  Brain()
      ears = Ears()
      mouth = Mouth(agent= brain.agent, sample_rate= 24000)
-     
      mouth.prewarm()
      
      print("Ikki online. (Premi INVIO per parlare, 'q' per uscire)")
-           
      while True: 
           cmd = input("\n>").strip()
           if cmd.lower() in ["q", "quit", "exit"]:
               break
           
           audio_b64= ears.listen(duration=5.0)
-          
           transcript =await brain.transcribe_audio(audio_b64)
           if not transcript:
                continue
-           
           print(f"Utente: {transcript}")
           print("Ikki: ", end="", flush=True)
           reply = await brain.think_and_respond()
           mouth.speak(reply)
-          
           
 if __name__ == "__main__":
     asyncio.run(main())
