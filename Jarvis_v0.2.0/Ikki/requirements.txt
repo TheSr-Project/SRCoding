@@ -1,0 +1,10 @@
+ollama
+python-dotenv
+sounddevice>=0.5.5
+soundfile
+numpy>=1.24.0,<2.0.0
+faster-whisper
+huggingface-hub
+neucodec
+onnxruntime
+phonemizer

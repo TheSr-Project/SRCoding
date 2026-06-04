@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 from fury import Agent, HistoryManager
 from fury.types import create_tool
-from tools import get_current_time, open_website, execute_terminal_command
+from tools import get_current_time, open_website, open_app, close_app
 
 
 
@@ -19,37 +19,46 @@ get_time_tool= create_tool(
 
 open_website_tool= create_tool (
     id= "open_website",
-    description= "ONLY use this tool if the user explicitly says 'open [website]' or 'search google for [query]'. Do NOT use this for normal conversation.",
+    description= (
+        "ONLY use this tool if the user explicitly asks to open a website, search on Google, search on YouTube, or find a video/song/topic online. "
+        "Can perform searches inside the website (e.g. 'open youtube and search for cat videos', or 'search google for python tutorials') using the optional search_query parameter."
+    ),
     execute= open_website,
     input_schema={
         "type":"object",
         "properties":{
-            "site_name":{"type": "string", "description":"The name of the website to open (e.g. youtube, google)." }},
+            "site_name":{"type": "string", "description":"The name of the website or platform to open (e.g. 'youtube', 'google', 'wikipedia', 'github')." },
+            "search_query":{"type": "string", "description":"Optional search query to run on that site (e.g. the video title or the search term)." }
+        },
         "required":["site_name"]
-        
     },
     output_schema={}
 )
 
-terminal_tool = create_tool(
-    id="execute_terminal_command",
-    description="Executes a raw command in the Windows terminal. "
-        "WINDOWS COMMAND CHEAT SHEET: "
-        "- To open an app: start [appname] "
-        "- To close an app: taskkill /IM [appname].exe /F "
-        "- To check running processes: tasklist "
-        "- To open a folder: explorer [path] "
-        "CRITICAL: You MUST provide the exact Windows command string in the 'command' parameter.",
-    execute=execute_terminal_command,
+open_app_tool = create_tool(
+    id="open_app",
+    description="ONLY use this tool if the user explicitly asks to 'open', 'run', 'start' or 'launch' a program/application on the computer. Do NOT use this for normal conversation.",
+    execute=open_app,
     input_schema={
         "type": "object",
         "properties": {
-            "command": {
-                "type": "string",
-                "description": "The exact Windows command to run (e.g. 'taskkill /IM spotify.exe /F' or 'start calc')."
-            }
+            "app_name": {"type": "string", "description": "The name of the local application to open (e.g. spotify, chrome, notepad, calculator)."}
         },
-        "required": ["command"]
+        "required": ["app_name"]
+    },
+    output_schema={}
+)
+
+close_app_tool = create_tool(
+    id="close_app",
+    description="ONLY use this tool if the user explicitly asks to 'close', 'exit', 'terminate' or 'kill' a program/application. Do NOT use this for normal conversation.",
+    execute=close_app,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "app_name": {"type": "string", "description": "The name of the local application to close (e.g. spotify, chrome, notepad, calculator)."}
+        },
+        "required": ["app_name"]
     },
     output_schema={}
 )
@@ -65,11 +74,11 @@ class Brain:
                 "Always respond in English, in a concise and natural way, as if speaking out loud. "
                 "CRITICAL INSTRUCTION: When answering normally (like 'How are you?'), you MUST use PLAIN TEXT. "
                 "Do NOT ever output JSON format or tool templates for normal conversation. "
-                "ONLY trigger tools if the user explicitly commands you to 'open up' an app, check the time, or search."
-                                "ACTION RULE: When the user commands you to do something (like opening/closing apps or searching), you MUST trigger the tool IMMEDIATELY. Do NOT announce 'I am doing it' or 'I will execute this'. Never substitute a real tool execution with conversational text. Just do it."
+                "ONLY trigger tools if the user explicitly commands you to 'open' an app, 'close' an app, check the time, or search/open a website."
+                "ACTION RULE: When the user commands you to do something (like opening/closing apps or searching), you MUST trigger the tool IMMEDIATELY. Do NOT announce 'I am doing it' or 'I will execute this'. Never substitute a real tool execution with conversational text. Just do it."
+                "ENVIRONMENT NOTE: You are running on a Windows system. You do NOT need to write terminal commands yourself. Simply use the high-level tools 'open_app', 'close_app', and 'open_website'."
             ),
-            tools=[get_time_tool, open_website_tool, terminal_tool]
-            
+            tools=[get_time_tool, open_website_tool, open_app_tool, close_app_tool]
         )
         self.history_manager = HistoryManager(agent=self.agent, auto_compact=False)
 
